@@ -1,0 +1,54 @@
+plugins { id 'com.android.application'; id 'org.jetbrains.kotlin.android' }
+
+// Klucz podpisu wydania NIE jest w repozytorium.
+// Źródła (w kolejności): -PkeystoreProps=/ścieżka/keystore.properties,
+// zmienna KATALOG_KEYSTORE_PROPERTIES, plik ../keystore.properties,
+// albo zmienne KATALOG_STORE_FILE / KATALOG_STORE_PASSWORD / KATALOG_KEY_ALIAS / KATALOG_KEY_PASSWORD.
+// Brak klucza => wydanie podpisywane kluczem debug (projekt zawsze się zbuduje).
+def ksProps = new Properties()
+def ksPath = project.findProperty('keystoreProps') ?: System.getenv('KATALOG_KEYSTORE_PROPERTIES') ?: rootProject.file('keystore.properties').path
+def ksFile = file(ksPath)
+if (ksFile.exists()) {
+  ksFile.withInputStream { ksProps.load(it) }
+  if (ksProps['storeFile'] && !new File(ksProps['storeFile']).isAbsolute()) {
+    ksProps['storeFile'] = new File(ksFile.parentFile, ksProps['storeFile']).path
+  }
+} else if (System.getenv('KATALOG_STORE_FILE')) {
+  ksProps['storeFile'] = System.getenv('KATALOG_STORE_FILE')
+  ksProps['storePassword'] = System.getenv('KATALOG_STORE_PASSWORD')
+  ksProps['keyAlias'] = System.getenv('KATALOG_KEY_ALIAS') ?: 'katalog'
+  ksProps['keyPassword'] = System.getenv('KATALOG_KEY_PASSWORD') ?: System.getenv('KATALOG_STORE_PASSWORD')
+}
+def hasReleaseKey = ksProps['storeFile'] && file(ksProps['storeFile']).exists()
+
+android {
+  namespace 'pl.wloczka.katalog'
+  compileSdk 34
+  defaultConfig {
+    applicationId "pl.wloczka.katalog"
+    minSdk 24
+    targetSdk 34
+    versionCode 3
+    versionName "1.2"
+  }
+  signingConfigs {
+    if (hasReleaseKey) {
+      release {
+        storeFile file(ksProps['storeFile'])
+        storePassword ksProps['storePassword']
+        keyAlias ksProps['keyAlias']
+        keyPassword ksProps['keyPassword']
+      }
+    }
+  }
+  buildTypes {
+    release {
+      minifyEnabled false
+      signingConfig hasReleaseKey ? signingConfigs.release : signingConfigs.debug
+    }
+  }
+  compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+  kotlinOptions { jvmTarget = '17' }
+}
+
+if (!hasReleaseKey) logger.warn("UWAGA: brak keystore.properties – wydanie zostanie podpisane kluczem DEBUG.")
